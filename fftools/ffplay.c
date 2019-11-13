@@ -368,6 +368,19 @@ static SDL_Renderer *renderer;
 static SDL_RendererInfo renderer_info = {0};
 static SDL_AudioDeviceID audio_dev;
 
+static int g_show_stat = 0;
+static int64_t  g_audio_bytes_interval = 0;
+static int64_t  g_audio_bytes_total    = 0;
+static int64_t  g_video_bytes_interval = 0;
+static int64_t  g_video_bytes_total    = 0;
+static int64_t  g_video_recv_frames_interval = 0;
+static int64_t  g_video_refresh_frames_interval = 0;
+static int64_t  g_video_frame_total = 0;
+static int  g_video_frame_type_i_interval = 0;
+static int  g_video_frame_type_p_interval = 0;
+static int  g_video_frame_type_b_interval = 0;
+static int  g_video_key_frame_interval = 0;
+
 static const struct TextureFormatEntry {
     enum AVPixelFormat format;
     int texture_fmt;
@@ -402,6 +415,47 @@ static int opt_add_vfilter(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 #endif
+
+static void get_data_str(char str[], int size) {
+    time_t now = time(NULL);
+    strftime(str, size, "%Y-%m-%d %H:%M:%S", localtime(&now));
+}
+
+static int  print_stat_info_thread(void *arg) {
+    VideoState *is = arg;
+    int64_t start_time = av_gettime_relative();
+    char time_str[1024];
+    while(1) {
+
+        if (is->abort_request)
+            break;
+
+        av_usleep((int64_t)(1000000.0));
+        int64_t now = av_gettime_relative();
+        int64_t video_bitrate = g_video_bytes_interval;
+        int64_t audio_bitrate = g_audio_bytes_interval;
+        int64_t recv_frames = g_video_recv_frames_interval;
+        int64_t refresh_frames = g_video_refresh_frames_interval;
+        get_data_str(time_str, 1024);
+        // video bitrate, audio bitrate, recv packets, refresh frames
+        av_log(NULL, AV_LOG_INFO, "%s stat info: b:v:%8"PRId64" kb/s, b:a:%5"PRId64" kb/s, recv packets:%3"PRId64"(%d), refresh frames:%3"PRId64"(I:%2d,P:%2d,B:%2d)\n",
+            time_str, 8 * video_bitrate / 1000,  8 * audio_bitrate / 1000, recv_frames, g_video_key_frame_interval, refresh_frames,
+            g_video_frame_type_i_interval, g_video_frame_type_p_interval, g_video_frame_type_b_interval);
+        g_video_bytes_interval = 0;
+        g_audio_bytes_interval = 0;
+        g_video_recv_frames_interval = 0;
+        g_video_refresh_frames_interval = 0;
+        g_video_key_frame_interval = 0;
+        g_video_frame_type_b_interval = 0;
+        g_video_frame_type_i_interval = 0;
+        g_video_frame_type_p_interval = 0;
+    }
+
+    int64_t now = av_gettime_relative();
+    av_log(NULL, AV_LOG_INFO, "total time:%ds, bitrate:%lld kb/s fps:%d\n", (now - start_time),
+    1.0 * (g_video_bytes_total + g_audio_bytes_total) / (now - start_time), g_video_frame_total / (now - start_time));
+    return 0;
+}
 
 static inline
 int cmp_audio_fmts(enum AVSampleFormat fmt1, int64_t channel_count1,
@@ -1029,6 +1083,15 @@ static void video_image_display(VideoState *is)
             return;
         vp->uploaded = 1;
         vp->flip_v = vp->frame->linesize[0] < 0;
+    }
+
+    g_video_refresh_frames_interval += 1;
+    if (vp->frame->pict_type == AV_PICTURE_TYPE_I) {
+        g_video_frame_type_i_interval += 1;
+    } else if (vp->frame->pict_type == AV_PICTURE_TYPE_B) {
+        g_video_frame_type_b_interval += 1;
+    } else if (vp->frame->pict_type = AV_PICTURE_TYPE_P) {
+        g_video_frame_type_p_interval += 1;
     }
 
     set_sdl_yuv_conversion_mode(vp->frame);
@@ -3024,6 +3087,21 @@ static int read_thread(void *arg)
         } else {
             is->eof = 0;
         }
+
+        if( pkt->stream_index == is->audio_stream) {
+            g_audio_bytes_interval += pkt->size;
+            g_audio_bytes_total += pkt->size;
+        } else if(pkt->stream_index == is->video_stream) {
+            g_video_bytes_interval += pkt->size;
+            g_video_bytes_total += pkt->size;
+            g_video_recv_frames_interval += 1;
+            g_video_frame_total += 1;
+
+            if (pkt->flags & AV_PKT_FLAG_KEY) {
+                g_video_key_frame_interval += 1;
+            }
+        }
+
         /* check if packet is in play range specified by user, then queue, otherwise discard */
         stream_start_time = ic->streams[pkt->stream_index]->start_time;
         pkt_ts = pkt->pts == AV_NOPTS_VALUE ? pkt->dts : pkt->pts;
@@ -3090,6 +3168,10 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
     if (!(is->continue_read_thread = SDL_CreateCond())) {
         av_log(NULL, AV_LOG_FATAL, "SDL_CreateCond(): %s\n", SDL_GetError());
         goto fail;
+    }
+
+    if (g_show_stat) {
+        SDL_CreateThread(print_stat_info_thread, "print_stat_info_thread", is);
     }
 
     init_clock(&is->vidclk, &is->videoq.serial);
@@ -3615,6 +3697,7 @@ static const OptionDef options[] = {
     { "find_stream_info", OPT_BOOL | OPT_INPUT | OPT_EXPERT, { &find_stream_info },
         "read and decode the streams to fill missing information with heuristics" },
     { "filter_threads", HAS_ARG | OPT_INT | OPT_EXPERT, { &filter_nbthreads }, "number of filter threads per graph" },
+    {"show_stat", OPT_INT | HAS_ARG, { &g_show_stat }, "show stat"},
     { NULL, },
 };
 

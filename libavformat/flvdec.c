@@ -77,6 +77,7 @@ typedef struct FLVContext {
     int64_t last_ts;
     int64_t time_offset;
     int64_t time_pos;
+    int show_flv_tag;
 } FLVContext;
 
 /* AMF date type */
@@ -684,6 +685,9 @@ static int amf_parse_object(AVFormatContext *s, AVStream *astream,
 static int flv_read_metabody(AVFormatContext *s, int64_t next_pos)
 {
     FLVContext *flv = s->priv_data;
+
+    flv->dump_full_metadata = 1; // default dump full metadata, by skl
+
     AMFDataType type;
     AVStream *stream, *astream, *vstream;
     AVStream av_unused *dstream;
@@ -1316,6 +1320,11 @@ retry_duration:
         pkt->flags |= AV_PKT_FLAG_KEY;
 
 leave:
+    if (flv->show_flv_tag) {
+        if (pkt->size > 0)
+            av_log(s, AV_LOG_INFO, "show_tag_info: type:%2d, is_key=%d, size:%8d, pts:%12"PRId64"\n", type, pkt->flags & AV_PKT_FLAG_KEY, pkt->size, pkt->pts);
+    }
+
     last = avio_rb32(s->pb);
     if (!flv->trust_datasize) {
         if (last != orig_size + 11 && last != orig_size + 10 &&
@@ -1353,6 +1362,7 @@ static const AVOption options[] = {
     { "flv_full_metadata", "Dump full metadata of the onMetadata", OFFSET(dump_full_metadata), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "flv_ignore_prevtag", "Ignore the Size of previous tag", OFFSET(trust_datasize), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "missing_streams", "", OFFSET(missing_streams), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 0xFF, VD | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
+    { "show_flv_tag", "show flv tag info", OFFSET(show_flv_tag), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VD},
     { NULL }
 };
 
