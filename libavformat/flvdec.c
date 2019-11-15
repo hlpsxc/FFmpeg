@@ -78,6 +78,7 @@ typedef struct FLVContext {
     int64_t time_offset;
     int64_t time_pos;
     int show_flv_tag;
+    int show_pts_diff;
 } FLVContext;
 
 /* AMF date type */
@@ -981,6 +982,8 @@ static int resync(AVFormatContext *s)
     }
     return AVERROR_EOF;
 }
+static int64_t last_audio_pts = 0;
+static int64_t last_video_pts = 0;
 
 static int flv_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
@@ -1324,6 +1327,16 @@ leave:
         if (pkt->size > 0)
             av_log(s, AV_LOG_INFO, "show_tag_info: type:%2d, is_key=%d, size:%8d, pts:%12"PRId64"\n", type, pkt->flags & AV_PKT_FLAG_KEY, pkt->size, pkt->pts);
     }
+    if (flv->show_pts_diff) {
+        if (stream_type == FLV_STREAM_TYPE_AUDIO) {
+            av_log(s, AV_LOG_INFO, "show_audio_pts_diff: %"PRId64"\n", last_audio_pts != 0 ? (pkt->pts - last_audio_pts) : 0);
+            last_audio_pts =  pkt->pts;
+        } else if (stream_type == FLV_STREAM_TYPE_VIDEO) {
+            av_log(s, AV_LOG_INFO, "show_video_pts_diff: %"PRId64"\n", last_video_pts != 0 ? (pkt->pts - last_video_pts) : 0);
+            last_video_pts =  pkt->pts;
+        }
+    }
+
 
     last = avio_rb32(s->pb);
     if (!flv->trust_datasize) {
@@ -1363,6 +1376,7 @@ static const AVOption options[] = {
     { "flv_ignore_prevtag", "Ignore the Size of previous tag", OFFSET(trust_datasize), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VD },
     { "missing_streams", "", OFFSET(missing_streams), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 0xFF, VD | AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY },
     { "show_flv_tag", "show flv tag info", OFFSET(show_flv_tag), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VD},
+    { "show_pts_diff", "show pts diff", OFFSET(show_pts_diff), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VD},
     { NULL }
 };
 

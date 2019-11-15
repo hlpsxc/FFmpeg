@@ -342,7 +342,7 @@ int av_log_format_line2(void *ptr, int level, const char *fmt, va_list vl,
  * Also to receive the last, "last repeated" line if any, the user app must
  * call av_log(NULL, AV_LOG_QUIET, "%s", ""); at the end
  */
-#define AV_LOG_SKIP_REPEATED 1
+#define AV_LOG_SKIP_REPEATED 0
 
 /**
  * Include the log severity in messages originating from codecs.
