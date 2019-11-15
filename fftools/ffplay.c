@@ -374,6 +374,7 @@ static int64_t  g_audio_bytes_total    = 0;
 static int64_t  g_video_bytes_interval = 0;
 static int64_t  g_video_bytes_total    = 0;
 static int64_t  g_video_recv_frames_interval = 0;
+static int64_t  g_audio_recv_frames_interval = 0;
 static int64_t  g_video_refresh_frames_interval = 0;
 static int64_t  g_video_frame_total = 0;
 static int  g_video_frame_type_i_interval = 0;
@@ -434,16 +435,18 @@ static int  print_stat_info_thread(void *arg) {
         int64_t now = av_gettime_relative();
         int64_t video_bitrate = g_video_bytes_interval;
         int64_t audio_bitrate = g_audio_bytes_interval;
-        int64_t recv_frames = g_video_recv_frames_interval;
+        int64_t recv_video_frames = g_video_recv_frames_interval;
+        int64_t recv_audio_frames = g_audio_recv_frames_interval;
         int64_t refresh_frames = g_video_refresh_frames_interval;
         get_data_str(time_str, 1024);
         // video bitrate, audio bitrate, recv packets, refresh frames
-        av_log(NULL, AV_LOG_INFO, "%s stat info: b:v:%8"PRId64" kb/s, b:a:%5"PRId64" kb/s, recv packets:%3"PRId64"(%d), refresh frames:%3"PRId64"(I:%2d,P:%2d,B:%2d)\n",
-            time_str, 8 * video_bitrate / 1000,  8 * audio_bitrate / 1000, recv_frames, g_video_key_frame_interval, refresh_frames,
+        av_log(NULL, AV_LOG_INFO, "%s stat info: b:v:%8"PRId64" kb/s, b:a:%5"PRId64" kb/s, recv packets:%3"PRId64"(%d),%3"PRId64", refresh frames:%3"PRId64"(I:%2d,P:%2d,B:%2d)\n",
+            time_str, 8 * video_bitrate / 1000,  8 * audio_bitrate / 1000, recv_video_frames, g_video_key_frame_interval, recv_audio_frames, refresh_frames,
             g_video_frame_type_i_interval, g_video_frame_type_p_interval, g_video_frame_type_b_interval);
         g_video_bytes_interval = 0;
         g_audio_bytes_interval = 0;
         g_video_recv_frames_interval = 0;
+        g_audio_recv_frames_interval = 0;
         g_video_refresh_frames_interval = 0;
         g_video_key_frame_interval = 0;
         g_video_frame_type_b_interval = 0;
@@ -3091,6 +3094,7 @@ static int read_thread(void *arg)
         if( pkt->stream_index == is->audio_stream) {
             g_audio_bytes_interval += pkt->size;
             g_audio_bytes_total += pkt->size;
+            g_audio_recv_frames_interval += 1;
         } else if(pkt->stream_index == is->video_stream) {
             g_video_bytes_interval += pkt->size;
             g_video_bytes_total += pkt->size;
