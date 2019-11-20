@@ -354,6 +354,7 @@ static char *afilters = NULL;
 static int autorotate = 1;
 static int find_stream_info = 1;
 static int filter_nbthreads = 0;
+static int show_avdiff = 0;
 
 /* current context */
 static int is_full_screen;
@@ -368,7 +369,7 @@ static SDL_Renderer *renderer;
 static SDL_RendererInfo renderer_info = {0};
 static SDL_AudioDeviceID audio_dev;
 
-static int g_show_stat = 0;
+static int show_stat = 0;
 static int64_t  g_audio_bytes_interval = 0;
 static int64_t  g_audio_bytes_total    = 0;
 static int64_t  g_video_bytes_interval = 0;
@@ -381,6 +382,8 @@ static int  g_video_frame_type_i_interval = 0;
 static int  g_video_frame_type_p_interval = 0;
 static int  g_video_frame_type_b_interval = 0;
 static int  g_video_key_frame_interval = 0;
+static int64_t g_video_frame_pts = 0;
+static int64_t g_audio_frame_pts = 0;
 
 static const struct TextureFormatEntry {
     enum AVPixelFormat format;
@@ -1034,6 +1037,11 @@ static void video_image_display(VideoState *is)
     SDL_Rect rect;
 
     vp = frame_queue_peek_last(&is->pictq);
+    g_video_frame_pts = vp->frame->pkt_pts;
+    if (show_avdiff) {
+        av_log(NULL, AV_LOG_INFO, "avdiff:%d,  audio:%"PRId64", video:%"PRId64"\n", (int)(g_video_frame_pts - g_audio_frame_pts), g_audio_frame_pts, g_video_frame_pts);
+    }
+
     if (is->subtitle_st) {
         if (frame_queue_nb_remaining(&is->subpq) > 0) {
             sp = frame_queue_peek(&is->subpq);
@@ -1049,7 +1057,6 @@ static void video_image_display(VideoState *is)
                     }
                     if (realloc_texture(&is->sub_texture, SDL_PIXELFORMAT_ARGB8888, sp->width, sp->height, SDL_BLENDMODE_BLEND, 1) < 0)
                         return;
-
                     for (i = 0; i < sp->sub.num_rects; i++) {
                         AVSubtitleRect *sub_rect = sp->sub.rects[i];
 
@@ -2447,7 +2454,7 @@ static int audio_decode_frame(VideoState *is)
         is->audio_src.freq = af->frame->sample_rate;
         is->audio_src.fmt = af->frame->format;
     }
-
+    g_audio_frame_pts = af->frame->pkt_pts;
     if (is->swr_ctx) {
         const uint8_t **in = (const uint8_t **)af->frame->extended_data;
         uint8_t **out = &is->audio_buf1;
@@ -3174,7 +3181,7 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
         goto fail;
     }
 
-    if (g_show_stat) {
+    if (show_stat) {
         SDL_CreateThread(print_stat_info_thread, "print_stat_info_thread", is);
     }
 
@@ -3701,7 +3708,8 @@ static const OptionDef options[] = {
     { "find_stream_info", OPT_BOOL | OPT_INPUT | OPT_EXPERT, { &find_stream_info },
         "read and decode the streams to fill missing information with heuristics" },
     { "filter_threads", HAS_ARG | OPT_INT | OPT_EXPERT, { &filter_nbthreads }, "number of filter threads per graph" },
-    {"show_stat", OPT_INT | HAS_ARG, { &g_show_stat }, "show stat"},
+    {"show_stat", OPT_INT | HAS_ARG, { &show_stat }, "show stat"},
+    {"show_avdiff", OPT_INT | HAS_ARG, { &show_avdiff }, "show stat"},
     { NULL, },
 };
 
